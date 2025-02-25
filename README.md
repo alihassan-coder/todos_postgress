@@ -3,8 +3,7 @@
 ## Installation
 To set up the project with Alembic and PostgreSQL, install the required dependencies:
 ```sh
-uv add alembic
-uv add psycopg2-binary
+pip install fastapi[all] alembic psycopg2-binary uvicorn
 ```
 
 ## New Project Setup
@@ -12,7 +11,7 @@ Follow these steps to initialize Alembic and configure it for database migration
 
 1. **Initialize Alembic**
    ```sh
-   uv run alembic init alembic
+   alembic init alembic
    ```
 2. **Set the Database URL**
    - Locate the `alembic.ini` file.
@@ -48,13 +47,85 @@ Whenever you make changes to your models, run the following commands:
 
 1. **Generate Migration Script**
    ```sh
-   uv run alembic revision --autogenerate -m "create todos table"
+   alembic revision --autogenerate -m "create todos table"
    ```
 
 2. **Apply Migrations**
    ```sh
-   uv run alembic upgrade head
+   alembic upgrade head
    ```
 
 This will create and apply the necessary database schema changes based on your models.
 
+## CRUD Operations
+
+### Create a To-Do
+To create a new to-do item, define an endpoint in your FastAPI app:
+```python
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from models import Todo, Base
+from database import engine, SessionLocal
+
+app = FastAPI()
+
+Base.metadata.create_all(bind=engine)
+
+class TodoCreate(BaseModel):
+    title: str
+    description: str = None
+
+@app.post("/todos/", response_model=TodoCreate)
+def create_todo(todo: TodoCreate, db: Session = SessionLocal()):
+    db_todo = Todo(title=todo.title, description=todo.description)
+    db.add(db_todo)
+    db.commit()
+    db.refresh(db_todo)
+    return db_todo
+```
+
+### Read To-Dos
+To read all to-do items:
+```python
+@app.get("/todos/")
+def read_todos(skip: int = 0, limit: int = 10, db: Session = SessionLocal()):
+    todos = db.query(Todo).offset(skip).limit(limit).all()
+    return todos
+```
+
+### Update a To-Do
+To update an existing to-do item:
+```python
+@app.put("/todos/{todo_id}")
+def update_todo(todo_id: int, todo: TodoCreate, db: Session = SessionLocal()):
+    db_todo = db.query(Todo).filter(Todo.id == todo_id).first()
+    if db_todo is None:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    db_todo.title = todo.title
+    db_todo.description = todo.description
+    db.commit()
+    db.refresh(db_todo)
+    return db_todo
+```
+
+### Delete a To-Do
+To delete a to-do item:
+```python
+@app.delete("/todos/{todo_id}")
+def delete_todo(todo_id: int, db: Session = SessionLocal()):
+    db_todo = db.query(Todo).filter(Todo.id == todo_id).first()
+    if db_todo is None:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    db.delete(db_todo)
+    db.commit()
+    return {"detail": "Todo deleted"}
+```
+
+## Running the Application
+To run the FastAPI application with Uvicorn:
+```sh
+uvicorn main:app --reload
+```
+
+This will provide a complete CRUD interface for managing to-do items in your FastAPI application.
